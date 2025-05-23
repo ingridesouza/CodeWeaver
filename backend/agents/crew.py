@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import datetime as dt
+from datetime import datetime
 
 from crewai import Crew
 
@@ -41,72 +42,63 @@ crew = Crew(
     verbose=True,
 )
 
+
+def _run_crewai_flow(user_prompt: str):
+    """
+    Tenta executar com .execute(); se não existir, usa .kickoff().
+    Devolve:
+        - raw_json (saída da task 0)
+        - files_block (saída da task 1)
+        - token_usage (dict ou {})
+    """
+    try:
+        # nova API (>= 0.12)
+        out = crew.execute({"prompt": user_prompt})
+        raw_json    = out.tasks_output[0].raw
+        files_block = out.tasks_output[1].raw
+        token_usage = dict(out.token_usage) if hasattr(out, "token_usage") else {}
+    except AttributeError:
+        # caiu aqui? então estamos na API antiga (<= 0.11)
+        out_list = crew.kickoff(inputs={"prompt": user_prompt})
+        raw_json    = out_list[0]["raw"]
+        files_block = out_list[1]["raw"]
+        token_usage = {}          # não disponível nessa versão
+    return raw_json, files_block, token_usage
+
 # ------------------------------------------------------------------------------
 # Função chamada pela API
 # ------------------------------------------------------------------------------
 def run_crew(user_prompt: str) -> dict:
-    """
-    Executa a crew e devolve um dicionário serializável por JSON.
+    """Executa a crew de ponta a ponta e devolve dados prontos p/ API."""
+    # 1) roda as tasks (independente da versão)
+    raw_json, files_block, token_usage = _run_crewai_flow(user_prompt)
 
-    Retorno:
-    {
-        "briefing": {...},                    # dict do prompt refinado
-        "project_dir": "backend/output/...",  # pasta com os arquivos
-        "zip_path":    "backend/output/....zip",
-        "timestamp":   "2025-05-23T14:30:05Z",
-        "token_usage": { ... }
-    }
-    """
-    # 1) Executa as duas tasks
-    output = crew.execute({"prompt": user_prompt})  # CrewOutput
-
-    # ------------------------------------------------------------------ #
-    # 2) BRIEFING (Task 0)
-    # ------------------------------------------------------------------ #
-    raw_json = output.tasks_output[0].raw
+    # 2) briefing -----------------------------------------------------
     briefing = parse_raw_json(raw_json)
+    objective = briefing.get("landing_page_specs", {}).get("objective", "landing-page")
+    slug      = slugify_title(objective)
 
-    # Usa o campo objective se existir para criar o slug
-    objective = (
-        briefing.get("landing_page_specs", {})
-        .get("objective", "landing-page")
-    )
-    slug = slugify_title(objective)
-
-    # ------------------------------------------------------------------ #
-    # 3) BLOCO ```files``` (Task 1)  → dict {path: content}
-    # ------------------------------------------------------------------ #
-    files_block = output.tasks_output[1].raw
-    files_dict: dict[str, str] = {}
-    current_file = None
-
+    # 3) converte bloco ```files``` em dict ---------------------------
+    files: dict[str, str] = {}
+    current = None
     for line in files_block.splitlines():
-        if line.startswith("```files") or line.startswith("```"):
+        if line.startswith("```"):
             continue
-        if line.strip() == "```":
-            # fecha bloco, ignore
-            continue
-        if line.endswith(".html") or line.endswith(".css") or line.endswith(".js"):
-            # linha com nome do arquivo
-            current_file = line.strip()
-            files_dict[current_file] = ""
-            continue
-        if current_file:
-            files_dict[current_file] += line + "\n"
+        if line.endswith((".html", ".css", ".js")):
+            current = line.strip()
+            files[current] = ""
+        elif current:
+            files[current] += line + "\n"
 
-    # ------------------------------------------------------------------ #
-    # 4) SALVAR + ZIP
-    # ------------------------------------------------------------------ #
-    project_dir: Path = save_landing_files(slug, files_dict)
-    zip_path:    Path = zip_folder(project_dir)
+    # 4) salva + zip --------------------------------------------------
+    project_dir = save_landing_files(slug, files)
+    zip_path    = zip_folder(project_dir)
 
-    # ------------------------------------------------------------------ #
-    # 5) Pacote final para a view
-    # ------------------------------------------------------------------ #
+    # 5) resposta final ----------------------------------------------
     return {
-        "briefing": briefing,
+        "briefing":    briefing,
         "project_dir": str(project_dir),
-        "zip_path": str(zip_path),
-        "timestamp": dt.datetime.utcnow().isoformat(timespec="seconds") + "Z",
-        "token_usage": dict(output.token_usage),
+        "zip_path":    str(zip_path),
+        "timestamp":   datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "token_usage": token_usage,
     }
