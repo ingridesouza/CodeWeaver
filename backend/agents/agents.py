@@ -1,50 +1,38 @@
-# agents/agents.py
-
+# backend/agents/agents.py
 import os
-from crewai import Agent
-from langchain.llms import OpenAI
-from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
+from crewai import Agent
 
-# Carregar variáveis de ambiente
 load_dotenv()
 
-# Configurações do modelo DeepSeek (compatível com API da OpenAI)
-llm = OpenAI(
-    model_name="deepseek-chat",
-    temperature=0.5,
-    openai_api_key=os.getenv("OPENAI_API_KEY"),
-    openai_api_base=os.getenv("OPENAI_API_BASE")
-)
+# Deixe a chave disponível p/ LiteLLM
+os.environ["DEEPSEEK_API_KEY"] = os.getenv("DEEPSEEK_API_KEY")
+if os.getenv("DEEPSEEK_API_BASE"):
+    os.environ["DEEPSEEK_API_BASE"] = os.getenv("DEEPSEEK_API_BASE")
 
-# Template para o agente aprimorador de prompt
-prompt_enhancer_template = PromptTemplate(
-    input_variables=["prompt"],
-    template="""
-Você é um engenheiro de prompt experiente. O usuário forneceu este pedido:
-"{prompt}"
+PROMPT_ENHANCER_TXT = """
+Você é um engenheiro de prompt experiente.
+O usuário forneceu este pedido: **{prompt}**
 
-Melhore esse prompt detalhando as seguintes informações, caso estejam ausentes:
-- Paleta de cores desejada (sugira se não for especificada)
-- Seções principais da landing page
-- Público-alvo
-- Tipo de conteúdo a ser exibido (texto, imagens, CTA)
-- Frameworks ou tecnologias preferidas (HTML, CSS, JS Vanilla)
+Melhore o pedido acrescentando:
+• Paleta de cores (sugira se faltar)
+• Seções principais da página
+• Público-alvo
+• Tipos de conteúdo (texto, imagens, CTA)
+• Tecnologias preferidas (HTML, CSS, JS Vanilla)
 
-Retorne a versão aprimorada do prompt no formato JSON.
+Devolva APENAS um JSON bem formatado com todas as instruções completas.
 """
-)
 
-# Definição do agente
 prompt_enhancer_agent = Agent(
     role="Aprimorador de Prompt",
-    goal="Refinar o pedido do usuário para gerar uma landing page com qualidade",
-    backstory="Especialista em identificar e preencher lacunas em instruções vagas.",
+    goal="Refinar o pedido do usuário para gerar uma landing page de alta qualidade.",
+    backstory="Especialista em preencher lacunas em instruções vagas.",
+    # 👉 basta a STRING com prefixo deepseek/
+    llm="deepseek/deepseek-chat",
+    prompt=PROMPT_ENHANCER_TXT,
     verbose=True,
     allow_delegation=False,
-    llm=llm,
-    prompt_template=prompt_enhancer_template
 )
 
-# Exporta o agente para uso em outros arquivos
 __all__ = ["prompt_enhancer_agent"]
