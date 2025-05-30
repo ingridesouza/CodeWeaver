@@ -2,7 +2,7 @@
 # ele define a tarefa que conecta o prompt com esse agente.
 
 from crewai import Task
-from agents import prompt_enhancer_agent
+from .agents import prompt_enhancer_agent
 
 # Tarefa: aprimorar o prompt fornecido pelo usuário
 enhance_prompt_task = Task(
