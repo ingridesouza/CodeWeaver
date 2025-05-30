@@ -1,29 +1,16 @@
-# backend/agents/crew.py
-"""
-Orquestra a execução completa da crew:
-
-1. enhance_prompt_task  → gera o briefing JSON (raw).
-2. generate_code_task   → devolve bloco ```files``` com index.html, css, js.
-
-Depois:
-- Converte o JSON bruto em dict.
-- Salva os arquivos em output/<slug>/...
-- Gera .zip
-- Devolve um dicionário simples para a view.
-"""
-
+"""Orquestração das tarefas dos agentes."""
 from __future__ import annotations
-
-from pathlib import Path
-import datetime as dt
-from datetime import datetime
-
+import datetime
 from crewai import Crew
 
-# Tasks
-from agents.tasks import enhance_prompt_task, generate_code_task
-
-# Utils
+from agents.tasks import (
+    enhance_prompt_task,
+    plan_tasks_task,
+    frontend_task,
+    backend_task,
+    tester_task,
+    qa_task,
+)
 from agents.utils import (
     parse_raw_json,
     slugify_title,
@@ -31,55 +18,63 @@ from agents.utils import (
     zip_folder,
 )
 
-# ------------------------------------------------------------------------------
-# Instância única da crew – pode ser importada por toda a aplicação
-# ------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Instância da Crew com todas as tarefas
+# ---------------------------------------------------------------------------
 crew = Crew(
     tasks=[
-        enhance_prompt_task,   # task index 0
-        generate_code_task,    # task index 1
+        enhance_prompt_task,  # 0
+        plan_tasks_task,      # 1
+        frontend_task,        # 2
+        backend_task,         # 3
+        tester_task,          # 4
+        qa_task,              # 5
     ],
     verbose=True,
 )
 
 
-def _run_crewai_flow(user_prompt: str):
-    """
-    Tenta executar com .execute(); se não existir, usa .kickoff().
-    Devolve:
-        - raw_json (saída da task 0)
-        - files_block (saída da task 1)
-        - token_usage (dict ou {})
-    """
+def _run_crewai_flow(prompt: str, feedback: str | None = None):
+    """Executa a crew e devolve as saídas brutas de cada tarefa."""
+    payload = {"prompt": prompt}
+    if feedback:
+        payload["feedback"] = feedback
+
     try:
-        # nova API (>= 0.12)
-        out = crew.execute({"prompt": user_prompt})
-        raw_json    = out.tasks_output[0].raw
-        files_block = out.tasks_output[1].raw
+        out = crew.execute(payload)
+        outputs = [t.raw for t in out.tasks_output]
         token_usage = dict(out.token_usage) if hasattr(out, "token_usage") else {}
     except AttributeError:
-        # caiu aqui? então estamos na API antiga (<= 0.11)
-        out_list = crew.kickoff(inputs={"prompt": user_prompt})
-        raw_json    = out_list[0]["raw"]
-        files_block = out_list[1]["raw"]
-        token_usage = {}          # não disponível nessa versão
-    return raw_json, files_block, token_usage
+        out_list = crew.kickoff(inputs=payload)
+        outputs = [step["raw"] for step in out_list]
+        token_usage = {}
+    return outputs, token_usage
 
-# ------------------------------------------------------------------------------
-# Função chamada pela API
-# ------------------------------------------------------------------------------
-def run_crew(user_prompt: str) -> dict:
-    """Executa a crew de ponta a ponta e devolve dados prontos p/ API."""
-    # 1) roda as tasks (independente da versão)
-    raw_json, files_block, token_usage = _run_crewai_flow(user_prompt)
 
-    # 2) briefing -----------------------------------------------------
-    briefing = parse_raw_json(raw_json)
-    objective = briefing.get("landing_page_specs", {}).get("objective", "landing-page")
-    slug      = slugify_title(objective)
+def run_crew(user_prompt: str, max_retries: int = 1) -> dict:
+    """Roda o fluxo completo com pequena lógica de retry se o QA reprovar."""
+    feedback = None
+    attempts = 0
+    outputs = []
+    token_usage = {}
+    while attempts <= max_retries:
+        outputs, token_usage = _run_crewai_flow(user_prompt, feedback)
+        qa_output = outputs[5]
+        if "APPROVED" in qa_output.upper():
+            break
+        feedback = qa_output
+        attempts += 1
 
-    # 3) converte bloco ```files``` em dict ---------------------------
-    files: dict[str, str] = {}
+    # Parse briefing and gerar zip com arquivos do frontend
+    raw_briefing = outputs[0]
+    files_block = outputs[2]
+
+    briefing = parse_raw_json(raw_briefing)
+    objective = briefing.get("landing_page_specs", {}).get("objective", "project")
+    slug = slugify_title(objective)
+
+    # converter bloco ```files``` em dict
+    files = {}
     current = None
     for line in files_block.splitlines():
         if line.startswith("```"):
@@ -90,15 +85,15 @@ def run_crew(user_prompt: str) -> dict:
         elif current:
             files[current] += line + "\n"
 
-    # 4) salva + zip --------------------------------------------------
     project_dir = save_landing_files(slug, files)
-    zip_path    = zip_folder(project_dir)
+    zip_path = zip_folder(project_dir)
 
-    # 5) resposta final ----------------------------------------------
     return {
-        "briefing":    briefing,
+        "briefing": briefing,
         "project_dir": str(project_dir),
-        "zip_path":    str(zip_path),
-        "timestamp":   datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "zip_path": str(zip_path),
+        "qa_output": qa_output,
         "token_usage": token_usage,
+        "attempts": attempts + 1,
+        "timestamp": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
     }

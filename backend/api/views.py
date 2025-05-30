@@ -7,23 +7,12 @@ from agents.crew import run_crew
 
 
 class GenerateLandingPageView(APIView):
-    """
-    Endpoint POST /api/generate/
+    """Gera um pequeno projeto a partir de um prompt do usuário.
 
-    Corpo esperado:
-    {
-      "prompt": "Quero uma landing page moderna sobre cafés especiais"
-    }
-
-    Retorno de sucesso:
-    {
-      "status": "success",
-      "briefing": {...},
-      "project_dir": "backend/output/cafes-especiais",
-      "zip_path": "backend/output/cafes-especiais.zip",
-      "timestamp": "2025-05-23T14:32:10Z",
-      "token_usage": { ... }
-    }
+    O endpoint `/api/generate/` recebe um JSON com o campo `prompt` e aciona o
+    fluxo de agentes (aprimoramento do prompt, planejamento, desenvolvimento,
+    testes e validação final). O resultado é o caminho para um arquivo zip
+    contendo o código gerado.
     """
 
     def post(self, request):
