@@ -1,37 +1,61 @@
-# agents/tasks.py
 from crewai import Task
 
-from .agents import prompt_enhancer_agent
+from .agents import (
+    prompt_enhancer_agent,
+    scrum_master_agent,
+    frontend_dev_agent,
+    backend_dev_agent,
+    tester_agent,
+    qa_agent,
+)
 
-from agents.agents import prompt_enhancer_agent
-from agents.generator import html_generator_agent
-from agents.utils import parse_raw_json, save_landing_files, zip_folder, slugify_title
-
-
-# Tarefa: aprimorar o prompt fornecido pelo usuário
+# 1) Enhance the original user prompt
 enhance_prompt_task = Task(
-    description=(
-        "Melhore o prompt fornecido pelo usuário para ser usado na geração de uma landing page. "
-        "Você deve adicionar detalhes como público-alvo, cores sugeridas, estrutura da página, "
-        "tipo de conteúdo (texto, imagem, botão), tecnologias preferidas (HTML, CSS, JS Vanilla) "
-        "e qualquer outro elemento relevante. "
-        "Retorne a resposta em formato JSON para facilitar o uso por outros agentes."
-    ),
+    description="Melhore o prompt fornecido pelo usuário.",
     agent=prompt_enhancer_agent,
-    expected_output=(
-        "Um JSON bem formatado com as instruções completas e detalhadas da landing page."
-    )
+    expected_output="Prompt aprimorado ou JSON com detalhes da aplicação.",
 )
 
-# Task 2: gerar código
-generate_code_task = Task(
-    description=(
-        "Receba o briefing JSON e gere index.html, css/style.css, js/script.js "
-        "conforme as instruções."
-    ),
-    agent=html_generator_agent,
-    expected_output="Bloco ```files ...``` com os três arquivos.",
+# 2) Plan technical tasks
+plan_tasks_task = Task(
+    description="Analise o prompt aprimorado e defina as tarefas de frontend e backend em JSON.",
+    agent=scrum_master_agent,
+    expected_output="JSON com frontend_task e backend_task",
 )
 
-# Exporta a task para ser utilizada na crew
-__all__ = ["enhance_prompt_task", "generate_code_task"]
+# 3) Frontend implementation
+frontend_task = Task(
+    description="Implemente a parte de frontend conforme indicado.",
+    agent=frontend_dev_agent,
+    expected_output="Bloco de arquivos com HTML, CSS e JS",
+)
+
+# 4) Backend implementation
+backend_task = Task(
+    description="Implemente a API ou lógica backend solicitada.",
+    agent=backend_dev_agent,
+    expected_output="Trechos de código backend",
+)
+
+# 5) Test the integrated result
+tester_task = Task(
+    description="Teste o frontend e backend integrados e reporte problemas.",
+    agent=tester_agent,
+    expected_output="APPROVED ou lista de bugs",
+)
+
+# 6) Final QA validation
+qa_task = Task(
+    description="Avalie a qualidade final do projeto e aprove ou dê feedback.",
+    agent=qa_agent,
+    expected_output="APPROVED ou feedback",
+)
+
+__all__ = [
+    "enhance_prompt_task",
+    "plan_tasks_task",
+    "frontend_task",
+    "backend_task",
+    "tester_task",
+    "qa_task",
+]
