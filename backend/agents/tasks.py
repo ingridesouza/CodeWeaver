@@ -1,8 +1,12 @@
 # agents/tasks.py
-# ele define a tarefa que conecta o prompt com esse agente.
-
 from crewai import Task
+
 from .agents import prompt_enhancer_agent
+
+from agents.agents import prompt_enhancer_agent
+from agents.generator import html_generator_agent
+from agents.utils import parse_raw_json, save_landing_files, zip_folder, slugify_title
+
 
 # Tarefa: aprimorar o prompt fornecido pelo usuário
 enhance_prompt_task = Task(
@@ -19,5 +23,15 @@ enhance_prompt_task = Task(
     )
 )
 
+# Task 2: gerar código
+generate_code_task = Task(
+    description=(
+        "Receba o briefing JSON e gere index.html, css/style.css, js/script.js "
+        "conforme as instruções."
+    ),
+    agent=html_generator_agent,
+    expected_output="Bloco ```files ...``` com os três arquivos.",
+)
+
 # Exporta a task para ser utilizada na crew
-__all__ = ["enhance_prompt_task"]
+__all__ = ["enhance_prompt_task", "generate_code_task"]
