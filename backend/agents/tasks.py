@@ -1,8 +1,12 @@
 # agents/tasks.py
 from crewai import Task
+
+from .agents import prompt_enhancer_agent
+
 from agents.agents import prompt_enhancer_agent
 from agents.generator import html_generator_agent
 from agents.utils import parse_raw_json, save_landing_files, zip_folder, slugify_title
+
 
 # Tarefa: aprimorar o prompt fornecido pelo usuário
 enhance_prompt_task = Task(
