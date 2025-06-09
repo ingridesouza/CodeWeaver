@@ -4,6 +4,7 @@ import HomePage from './pages/HomePage';
 import ResultPage from './pages/ResultPage';
 
 export default function App() {
+  
   const [result, setResult] = useState(null);
   const navigate = useNavigate();
 
